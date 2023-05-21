@@ -24,7 +24,7 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/python-poetry/poetry
-    rev: "7fe4678f92dcab48a35169db6567cbb3f5a7e3ef" # frozen: 1.4.0
+    rev: "cacd43c076748411a759c65dd46858cd8b7ef3b3" # frozen: 1.5.0
     hooks:
       - id: poetry-check
       - id: poetry-lock
@@ -46,24 +46,24 @@ repos:
         name: isort (python)
 
   - repo: https://github.com/psf/black
-    rev: b0d1fba7ac3be53c71fb0d3211d911e629f8aecb # frozen: 23.1.0
+    rev: bf7a16254ec96b084a6caf3d435ec18f0f245cc7 # frozen: 23.3.0
     hooks:
       - id: black
 
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: "6f3cb139ef36133b6f903b97facc57b07cef57c9" # frozen: v3.0.0-alpha.6
+    rev: "6fd1ced85fc139abd7f5ab4f3d78dab37592cd5e" # frozen: v3.0.0-alpha.9-for-vscode
     hooks:
       - id: prettier
         exclude: ^docs/source/(_polyversion/|_)templates/
 
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: cc27459d0f843a9333dd181e7451a8d041591a25 # frozen: v0.12.1
+    rev: b752273289ecf6d81dbbe6fc8284f2689ef8514d # frozen: v0.13
     hooks:
       - id: validate-pyproject
         files: pyproject.toml$
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.0.269"
+    rev: "fbc96a6c25c4a03a3ab7cb6408b5852e739101b3" # frozen: v0.0.269
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
