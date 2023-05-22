@@ -19,6 +19,14 @@ from typing import List, Mapping, Optional, Tuple, cast
 from ruamel.yaml import YAML
 from ruamel.yaml.util import load_yaml_guess_indent
 
+try:
+    from rich.console import Console
+
+    # from rich.logging import RichHandler
+    COLOUR_SUPPORT = True
+except ImportError:
+    COLOUR_SUPPORT = False
+
 # -- Git ---------------------------------------------------------------------
 
 # The git commands in this section is partially sourced and modified from
@@ -75,8 +83,6 @@ def cmd_output(
     returncode = int(proc.returncode)
 
     if check and returncode:
-        print(stdout)
-        print(stderr)
         raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
 
     return returncode, stdout, stderr
@@ -264,7 +270,10 @@ class Linter:
 
     @classmethod
     def get_tags(cls, repo_url: str, rev: str):
-        return get_tags(repo_url, rev)
+        try:
+            return get_tags(repo_url, rev)
+        except subprocess.CalledProcessError:
+            return []
 
     @classmethod
     def select_best_tag(cls, repo_url: str, rev: str):
@@ -274,6 +283,13 @@ class Linter:
             key=len,
             default=None,
         ) or min(tags, key=len, default=None)
+
+    @classmethod
+    def get_hash_for(cls, repo_url: str, rev: str):
+        try:
+            return get_hash_for(repo_url, rev)
+        except subprocess.CalledProcessError:
+            return None
 
     def enabled(self, complain_or_rule):
         if isinstance(complain_or_rule, Rule):
@@ -399,7 +415,7 @@ class Linter:
 
             if self.should_fix(comp):
                 # get full hash
-                hash = get_hash_for(repo_url, rev)
+                hash = self.get_hash_for(repo_url, rev)
 
                 if hash:
                     # adjust rev
@@ -438,8 +454,10 @@ class Linter:
         with self.file(file, complains):
             # Load file
             yaml = YAML()
-            config_yaml, ind, bsi = load_yaml_guess_indent(content)
+            yaml.preserve_quotes = True
+            _, ind, bsi = load_yaml_guess_indent(content)
             yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
+            config_yaml = yaml.load(content)
 
             # Lint
             for repo_yaml in config_yaml["repos"]:
@@ -450,12 +468,12 @@ class Linter:
         return stream.getvalue(), complains
 
 
-# 1. Differentiate frozen vs unfrozen version specifiers ✓
-# 2. Retrieve version for given hash ✓
-# 3. Detect frozen x.x.x comments ✓
-# 4. Linting errors ✓
-# 5. Fix linting errors where possible ✓
-# 6. Define cmdline syntax
+pattern_rich_markup_tag = r"(?<!\\)\[.*?\]"
+regex_rich_markup_tag = re.compile(pattern_rich_markup_tag)
+
+
+def strip_rich_markup(string: str):
+    return regex_rich_markup_tag.sub("", string)
 
 
 def get_parser():
@@ -473,9 +491,9 @@ def get_parser():
     rule_group = parser.add_mutually_exclusive_group()
     rule_group.add_argument("--rules", default="", dest="rules")
     rule_group.add_argument(
-        "--all-rules",
+        "--strict",
         action="store_const",
-        const="".join(r.value for r in Rule),
+        const="".join(r.value for r in Rule if not r == Rule.FORCE_UNFREEZE),
         dest="rules",
     )
 
@@ -487,23 +505,18 @@ def get_parser():
     parser.add_argument("--quiet", action="store_true", help="Don't output anything")
     parser.add_argument(
         "--format",
-        help="The output format for complains. Use python string formatting.",
+        help="The output format for complains. Use python string formatting. "
+        "Rich markup is also supported.",
         default="{fix}[{code}] {file}:{line}:{column} {msg}",
     )
 
-    colour_group = parser.add_mutually_exclusive_group()
-    colour_group.add_argument(
-        "--colour",
-        action="store_const",
-        const=True,
-        help="Colourful output",
-        default=None,
-    )
-    colour_group.add_argument(
+    parser.add_argument(
         "--no-colour",
         action="store_const",
         const=False,
-        help="Colourful output [needs extra: colour]",
+        default=True,
+        dest="colour",
+        help="Disable colourful output",
     )
 
     parser.add_argument("files", type=Path, nargs="+", metavar="file")
@@ -511,55 +524,80 @@ def get_parser():
     return parser
 
 
+@contextmanager
+def output(*, colour: bool):
+    if not COLOUR_SUPPORT:
+
+        def out(string: str):
+            print(strip_rich_markup(string))  # noqa: T201
+
+    else:
+        console = Console(no_color=None if colour else True)
+
+        def out(string: str):
+            console.print(string, highlight=False)
+
+    yield out
+
+
 def main():
     """The main entry point."""
     parser = get_parser()
     options = parser.parse_args()
-    rules: str = options.rules
+    with output(colour=options.colour) as out:
+        rules: str = options.rules
 
-    # handle exclusive rules
-    for exclusive_group in EXCLUSIVE_RULES:
-        found = None
-        for rule in exclusive_group:
-            if rule.value in rules:
-                if found:
-                    parser.error(
-                        f"Mutually exclusive rules `{found+rule.value}` specified"
-                    )
-                found = rule.value
+        output_template = options.format
+        fixed_str = "[green]FIXED[/green]"
+        fixable_str = "[red]FIXABLE[/red]"
+        error_str = "[red]ERROR[/red]"
 
-    linter = Linter(rules, options.fix)
+        # handle exclusive rules
+        for exclusive_group in EXCLUSIVE_RULES:
+            found = None
+            for rule in exclusive_group:
+                if rule.value in rules:
+                    if found:
+                        parser.error(
+                            f"Mutually exclusive rules `{found+rule.value}` specified"
+                        )
+                    found = rule.value
 
-    for file in options.files:
-        file = cast(Path, file)
-        content = file.read_text()
-        content, complains = linter.run(str(file), content)
+        linter = Linter(rules, options.fix)
 
-        if options.print:
-            print(content)  # noqa: T201
-        elif options.fix:
-            file.write_text(content)
+        for file in options.files:
+            file = cast(Path, file)
+            content = file.read_text()
+            content, complains = linter.run(str(file), content)
 
-        for comp in complains:
-            print(  # noqa: T201
-                options.format.format(
-                    file=comp.file,
-                    code=comp.type.code,  # type: ignore[attr-defined]
-                    msg=comp.message,
-                    line=comp.line + 1,
-                    column=comp.column + 1,
-                    fix="FIXED"
+            if options.print:
+                out(content)
+            elif options.fix:
+                file.write_text(content)
+
+            for comp in complains:
+                fix_status = (
+                    fixed_str
                     if comp.fixed
-                    else "FIXABLE"
+                    else fixable_str
                     if comp.fixable
-                    else "ERROR",
+                    else error_str
                 )
-            )
+                out(
+                    output_template.format(
+                        file=comp.file,
+                        code=comp.type.code,  # type: ignore[attr-defined]
+                        msg=comp.message,
+                        line=comp.line + 1,
+                        column=comp.column + 1,
+                        fix=fix_status,
+                    )
+                )
 
 
-# TODO catch git errors
-# TODO colour
 # TODO speed
+# TODO logging
+# TODO docstrings
 
 if __name__ == "__main__":
     main()
