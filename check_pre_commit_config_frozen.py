@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import enum
+import logging
 import os
 import re
 import subprocess
@@ -21,11 +22,16 @@ from ruamel.yaml.util import load_yaml_guess_indent
 
 try:
     from rich.console import Console
+    from rich.logging import RichHandler
 
-    # from rich.logging import RichHandler
     COLOUR_SUPPORT = True
 except ImportError:
     COLOUR_SUPPORT = False
+
+# -- Logging -----------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # -- Git ---------------------------------------------------------------------
 
@@ -271,24 +277,32 @@ class Linter:
     @classmethod
     def get_tags(cls, repo_url: str, rev: str):
         try:
-            return get_tags(repo_url, rev)
+            logger.debug(f"Retrieving tags for {repo_url}@{rev}")
+            tags = get_tags(repo_url, rev)
+            logger.debug(f"Retrieved {tags}")
+            return tags
         except subprocess.CalledProcessError:
+            logger.exception("Couldn't retrieve tags.")
             return []
 
     @classmethod
     def select_best_tag(cls, repo_url: str, rev: str):
         tags = cls.get_tags(repo_url, rev)
-        return min(
+        tag = min(
             filter(lambda s: "." in s, tags),
             key=len,
             default=None,
         ) or min(tags, key=len, default=None)
+        logger.debug(f"Selected {tag}")
+        return tag
 
     @classmethod
     def get_hash_for(cls, repo_url: str, rev: str):
+        logger.debug(f"Retrieving hash for {repo_url}@{rev}")
         try:
             return get_hash_for(repo_url, rev)
         except subprocess.CalledProcessError:
+            logger.exception("Couldn't retrieve hash.")
             return None
 
     def enabled(self, complain_or_rule):
@@ -322,6 +336,8 @@ class Linter:
         msg = type_.template.format(**kwargs)
         c = Complain(self._current_file, line, column, type_, msg, fixable)
 
+        logger.debug(f"Issued {c}")
+
         if self.enabled(c):
             self._current_complains.append(c)
         return c
@@ -336,8 +352,13 @@ class Linter:
         comments = repo_yaml.ca.items.get("rev") or [None] * 3
         comment_yaml = comments[2]
         if comment_yaml:
-            match = process_frozen_comment(comment_yaml.value.strip())
+            comment_str = comment_yaml.value.strip()
+            match = process_frozen_comment(comment_str)
             comment_rev, comment_note = match if match else (None, comment_yaml.value)
+            logger.debug(
+                f"Split comment '{comment_str}' into "
+                f"rev={comment_rev!r} note={comment_note!r}"
+            )
         comment_note = comment_note or ""
 
         # check rev
@@ -437,7 +458,7 @@ class Linter:
                         line,
                         comment_yaml.column or column,
                         True,
-                        comment=comment_yaml.value.strip(),
+                        comment=comment_str,
                     )
 
                     if self.should_fix(comp):
@@ -458,6 +479,8 @@ class Linter:
             _, ind, bsi = load_yaml_guess_indent(content)
             yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
             config_yaml = yaml.load(content)
+
+            logger.debug(f"Indentation detected: ind={ind} bsi={bsi}")
 
             # Lint
             for repo_yaml in config_yaml["repos"]:
@@ -518,6 +541,7 @@ def get_parser():
         dest="colour",
         help="Disable colourful output",
     )
+    parser.add_argument("--verbose", "-v", action="count", default=0)
 
     parser.add_argument("files", type=Path, nargs="+", metavar="file")
 
@@ -527,6 +551,7 @@ def get_parser():
 @contextmanager
 def output(*, colour: bool):
     if not COLOUR_SUPPORT:
+        console = None
 
         def out(string: str):
             print(strip_rich_markup(string))  # noqa: T201
@@ -537,17 +562,25 @@ def output(*, colour: bool):
         def out(string: str):
             console.print(string, highlight=False)
 
-    yield out
+    yield out, console
 
 
 def main():
     """The main entry point."""
     parser = get_parser()
     options = parser.parse_args()
-    with output(colour=options.colour) as out:
-        rules: str = options.rules
 
-        output_template = options.format
+    logger.setLevel(max(logging.ERROR - options.verbose * 10, 10))
+
+    rules: str = options.rules
+    output_template: str = options.format
+
+    with output(colour=options.colour) as (out, console):
+        if console:
+            logger.addHandler(RichHandler(console=console))
+        else:
+            logger.info("Colour mode not available because rich isn't available.")
+
         fixed_str = "[green]FIXED[/green]"
         fixable_str = "[red]FIXABLE[/red]"
         error_str = "[red]ERROR[/red]"
@@ -567,6 +600,8 @@ def main():
 
         for file in options.files:
             file = cast(Path, file)
+            logger.info(f"Processing {file}...")
+
             content = file.read_text()
             content, complains = linter.run(str(file), content)
 
@@ -596,7 +631,6 @@ def main():
 
 
 # TODO speed
-# TODO logging
 # TODO docstrings
 
 if __name__ == "__main__":
