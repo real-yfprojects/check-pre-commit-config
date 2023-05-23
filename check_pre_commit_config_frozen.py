@@ -927,7 +927,11 @@ async def main():
 
         results: list[Tuple[str, List[Complaint]]] = await gather(*futures)
 
+        rc = 0
         for file, (content, complaints) in zip(files, results):
+            if complaints:
+                rc = 1  # make pre-commit check fail
+
             if options.print:
                 out(content)
             elif options.fix:
@@ -952,6 +956,8 @@ async def main():
                     )
                 )
 
+        return rc
+
 
 # TODO YAML error
 # TODO Missing fields
@@ -960,7 +966,7 @@ async def main():
 
 def run():
     """Run the program from synchronous context."""
-    asyncio.run(main())
+    return asyncio.run(main())
 
 
 if __name__ == "__main__":
