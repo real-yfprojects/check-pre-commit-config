@@ -25,9 +25,10 @@ classifiers = [
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python      = ">=3.7"                                      # doesn't conform to semver
-ruamel-yaml = ">=0.17.26"                                  # doesn't conform to semver
+python      = ">=3.7"                                                           # doesn't conform to semver
+ruamel-yaml = ">=0.17.26"                                                       # doesn't conform to semver
 rich        = { version = "^13.3.5", extras = ["colour"] }
+pre-commit  = { version = "^3.3.2", extras = ["pre-commit"], python = ">=3.8" }
 
 [tool.poetry.scripts]
 check-pre-commit-config-frozen = "check_pre_commit_config_frozen:main"

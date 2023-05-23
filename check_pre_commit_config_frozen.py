@@ -8,6 +8,7 @@ import enum
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -28,6 +29,13 @@ try:
 except ImportError:
     COLOUR_SUPPORT = False
 
+try:
+    from pre_commit.store import Store
+
+    PRE_COMMIT_AVAILABLE = True
+except ImportError:
+    PRE_COMMIT_AVAILABLE = False
+
 # -- Logging -----------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
@@ -44,6 +52,7 @@ logger.addHandler(logging.NullHandler())
 
 # prevents errors on windows
 NO_FS_MONITOR = ("-c", "core.useBuiltinFSMonitor=false")
+PARTIAL_CLONE = ("-c", "extensions.partialClone=true")
 
 
 def no_git_env(_env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -88,8 +97,11 @@ def cmd_output(
     stdout, stderr = proc.communicate()
     returncode = int(proc.returncode)
 
-    if check and returncode:
-        raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
+    if returncode:
+        logger.debug(f"Output from '{cmd}': {stdout}")
+        logger.debug(f"Err from '{cmd}': {stderr}")
+        if check:
+            raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
 
     return returncode, stdout, stderr
 
@@ -120,35 +132,61 @@ def tmp_repo(repo: str):
 @lru_cache()
 def get_tags(repo_url: str, hash: str) -> List[str]:
     with tmp_repo(repo_url) as repo_path:
-        _git = ("git", *NO_FS_MONITOR, "-C", str(repo_path))
+        return get_tags_in_repo(repo_path, hash)
 
+
+@lru_cache()
+def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
+    _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
+
+    if fetch:
         # download rev
         # The --filter options makes use of git's partial clone feature.
         # It only fetches the commit history but not the commit contents.
         # Still it fetches all commits reachable from the given commit which is way more than we need
+        cmd_output(*_git, "config", "extensions.partialClone", "true")
         cmd_output(
             *_git, "fetch", "origin", hash, "--quiet", "--filter=tree:0", "--tags"
         )
-        # determine closest tag
-        closest_tag = cmd_output(
-            *_git, "describe", "FETCH_HEAD", "--abbrev=0", "--tags"
-        )[1]
-        closest_tag = closest_tag.strip()
 
-        # determine tags
-        out = cmd_output(*_git, "tag", "--points-at", f"refs/tags/{closest_tag}")[1]
-        tags = out.splitlines()
+    # determine closest tag
+    closest_tag = cmd_output(*_git, "describe", hash, "--abbrev=0", "--tags")[1]
+    closest_tag = closest_tag.strip()
 
-    return tags
+    # determine tags
+    out = cmd_output(*_git, "tag", "--points-at", f"refs/tags/{closest_tag}")[1]
+    return out.splitlines()
 
 
-def get_hash_for(repo_url: str, rev: str) -> str:
+@lru_cache()
+def get_hash(repo_url: str, rev: str) -> str:
     with tmp_repo(repo_url) as repo_path:
         _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
-        cmd_output(
-            *_git, "fetch", "origin", rev, "--quiet", "--filter=tree:0", "--tags"
-        )
-        return cmd_output(*_git, "rev-parse", "FETCH_HEAD")[1].strip()
+        cmd_output(*_git, "fetch", "origin", rev, "--quiet", "--depth=1", "--tags")
+        return get_hash_in_repo(repo_path, rev)
+
+
+@lru_cache()
+def get_hash_in_repo(repo_path: str, rev: str):
+    _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
+    return cmd_output(*_git, "rev-parse", rev)[1].strip()
+
+
+# -- Pre-commit --------------------------------------------------------------
+
+
+def get_pre_commit_cache(repo_url: str, rev: str) -> Optional[str]:
+    if not PRE_COMMIT_AVAILABLE:
+        return None
+
+    store = Store()
+
+    with store.connect() as db:
+        result = db.execute(
+            "SELECT path FROM repos WHERE repo = ? AND ref = ?",
+            (repo_url, rev),
+        ).fetchone()
+        return result[0] if result else None
 
 
 # -- Linter ------------------------------------------------------------------
@@ -276,14 +314,28 @@ class Linter:
 
     @classmethod
     def get_tags(cls, repo_url: str, rev: str):
+        logger.debug(f"Retrieving tags for {repo_url}@{rev}")
+        tags = None
+
         try:
-            logger.debug(f"Retrieving tags for {repo_url}@{rev}")
-            tags = get_tags(repo_url, rev)
-            logger.debug(f"Retrieved {tags}")
-            return tags
-        except subprocess.CalledProcessError:
-            logger.exception("Couldn't retrieve tags.")
-            return []
+            cached_repo = get_pre_commit_cache(repo_url, rev)
+            if cached_repo:
+                logger.info(f"Found repo cached by pre-commit at {cached_repo}")
+                tags = get_tags_in_repo(cached_repo, rev)
+            else:
+                logger.info("Couldn't find cached repo in pre-commit cache.")
+        except (sqlite3.Error, sqlite3.Warning, subprocess.CalledProcessError):
+            logger.exception("Couldn't use pre-commit cache.")
+
+        if tags is None:
+            logger.debug("Checking out repo.")
+            try:
+                tags = get_tags(repo_url, rev)
+            except subprocess.CalledProcessError:
+                logger.exception("Couldn't retrieve tags.")
+
+        logger.debug(f"Retrieved {tags}")
+        return tags or []
 
     @classmethod
     def select_best_tag(cls, repo_url: str, rev: str):
@@ -300,10 +352,25 @@ class Linter:
     def get_hash_for(cls, repo_url: str, rev: str):
         logger.debug(f"Retrieving hash for {repo_url}@{rev}")
         try:
-            return get_hash_for(repo_url, rev)
+            cached_repo = get_pre_commit_cache(repo_url, rev)
+            if cached_repo:
+                logger.info(f"Found repo cached by pre-commit at {cached_repo}")
+                try:
+                    return get_hash_in_repo(cached_repo, rev, fetch=False)
+                except subprocess.CalledProcessError:
+                    logger.debug("Fetching tags to pre-commit cache.")
+                    return get_hash_in_repo(cached_repo, rev, fetch=True)
+            else:
+                logger.info("Couldn't find cached repo in pre-commit cache.")
+        except (sqlite3.Error, sqlite3.Warning, subprocess.CalledProcessError):
+            logger.exception("Couldn't use pre-commit cache.")
+
+        try:
+            return get_hash(repo_url, rev)
         except subprocess.CalledProcessError:
             logger.exception("Couldn't retrieve hash.")
-            return None
+
+        return None
 
     def enabled(self, complain_or_rule):
         if isinstance(complain_or_rule, Rule):
@@ -630,7 +697,7 @@ def main():
                 )
 
 
-# TODO speed
+# TODO concurrency
 # TODO docstrings
 
 if __name__ == "__main__":
