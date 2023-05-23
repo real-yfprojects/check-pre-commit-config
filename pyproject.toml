@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Ensure correct `frozen: x.x.x` comments in `pre-commit-config.yaml`"
 authors = ["yfprojects <real-yfprojects@users.noreply.github.com>"]
 license = "MIT"
-repository = "http://github.com/real-yfprojects/check-pre-commit-config-frozen"
+repository = "http://github.com/real-yfprojects/check-pre-commit-config"
 keywords = ["pre-commit", "linter", "development"]
 classifiers = [
     'Intended Audience :: Developers',
