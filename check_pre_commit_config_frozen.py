@@ -15,10 +15,10 @@ import tempfile
 from asyncio import create_subprocess_exec, gather
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from io import StringIO
 from pathlib import Path
-from typing import List, Mapping, Optional, Tuple, cast
+from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Tuple, cast
 
 from ruamel.yaml import YAML
 from ruamel.yaml.util import load_yaml_guess_indent
@@ -58,6 +58,23 @@ PARTIAL_CLONE = ("-c", "extensions.partialClone=true")
 
 
 def no_git_env(_env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """
+    Clear problematic git env vars.
+
+    Git sometimes sets some environment variables that alter its behaviour.
+    You can pass `os.environ` to this method and then pass its return value
+    to `subprocess.run` as a environment.
+
+    Parameters
+    ----------
+    _env : Mapping[str, str] | None, optional
+        A dictionary of env vars, by default None
+
+    Returns
+    -------
+    dict[str, str]
+        The same dictionary but without the problematic vars
+    """
     # Too many bugs dealing with environment variables and GIT:
     # https://github.com/pre-commit/pre-commit/issues/300
     # In git 2.6.3 (maybe others), git exports GIT_WORK_TREE while running
@@ -92,6 +109,28 @@ async def cmd_output(
     check: bool = True,
     **kwargs,
 ) -> tuple[int, str, str]:
+    """
+    Run a command asyncronously.
+
+    Parameters
+    ----------
+    *cmd : str
+        The command to run
+    check : bool, optional
+        Raise an error when the returncode isn't zero, by default True
+    **kwargs
+        keyword arguments to pass to subprocess.Popen
+
+    Returns
+    -------
+    tuple[int, str, str]
+        Returncode, stderr, stdout
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        The command failed.
+    """
     for arg in ("stdin", "stdout", "stderr"):
         kwargs.setdefault(arg, subprocess.PIPE)
 
@@ -111,6 +150,16 @@ async def cmd_output(
 
 
 async def init_repo(path: str, remote: str) -> None:
+    """
+    Create a minimal repository with a given remote.
+
+    Parameters
+    ----------
+    path : str
+        The location of the repo to create.
+    remote : str
+        The url to add as `origin` remote.
+    """
     if os.path.isdir(remote):
         remote = os.path.abspath(remote)
 
@@ -122,7 +171,22 @@ async def init_repo(path: str, remote: str) -> None:
 
 
 @asynccontextmanager
-async def tmp_repo(repo: str):
+async def tmp_repo(repo: str) -> AsyncGenerator[Path, Any]:
+    """
+    Clone a repo to a temporary directory.
+
+    This method returns a contextmanager that removes the repository on exit.
+
+    Parameters
+    ----------
+    repo : str
+        The repo url to clone.
+
+    Returns
+    -------
+    AsyncContextManager[Path]
+        A contextmanager that returns a path to the cloned directory.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         _git = ("git", *NO_FS_MONITOR, "-C", tmp)
         # init repo
@@ -135,12 +199,48 @@ async def tmp_repo(repo: str):
 
 @lru_cache()
 async def get_tags(repo_url: str, hash: str) -> List[str]:
+    """
+    Retrieve a list of tags for a given commit.
+
+    This method is cached for the same combination of repo and hash.
+
+    Parameters
+    ----------
+    repo_url : str
+        The URL of the repo the commit is in.
+    hash : str
+        A valid git commit reference.
+
+    Returns
+    -------
+    List[str]
+        A list of tags for referencing the given commit.
+    """
     async with tmp_repo(repo_url) as repo_path:
         return await get_tags_in_repo(repo_path, hash)
 
 
 @lru_cache()
-async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
+async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True) -> List[str]:
+    """
+    Retrieve a list of tags for a given commit.
+
+    This method is cached for the same combination of repo and hash.
+
+    Parameters
+    ----------
+    repo_path : str
+        The path to the cloned repo.
+    hash : str
+        A valid git commit reference.
+    fetch : bool, optional
+        Download the revision with git fetch first, by default True
+
+    Returns
+    -------
+    List[str]
+        A list of tags for referencing the given commit.
+    """
     _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
 
     if fetch:
@@ -164,16 +264,59 @@ async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
 
 @lru_cache()
 async def get_hash(repo_url: str, rev: str) -> str:
+    """
+    Retrieve the hash for a given tag.
+
+    This method is cached for the same combination of repo and rev.
+
+    Parameters
+    ----------
+    repo_url : str
+        The URL of the repo the commit is in.
+    rev : str
+        A valid git commit reference.
+
+    Returns
+    -------
+    str
+        The hex object name (hash) referenced.
+    """
     async with tmp_repo(repo_url) as repo_path:
         return await get_hash_in_repo(repo_path, rev)
 
 
 @lru_cache()
-async def get_hash_in_repo(repo_path: str, rev: str, fetch=True):
+async def get_hash_in_repo(repo_path: str, rev: str, fetch=True) -> str:
+    """
+    Retrieve the hash for a given tag.
+
+    This method is cached for the same combination of repo and rev.
+
+    Parameters
+    ----------
+    repo_path : str
+        The path to the cloned repo.
+    rev : str
+        A valid git commit reference.
+    fetch : bool, optional
+        Download the commit for the given reference first, by default True
+
+    Returns
+    -------
+    str
+        The hex object name (hash) referenced.
+    """
     _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
     if fetch:
         await cmd_output(
-            *_git, "fetch", "origin", rev, "--quiet", "--depth=1", "--tags"
+            *_git,
+            "fetch",
+            "origin",
+            rev,
+            "--quiet",
+            "--depth=1",
+            "--filter=tree:0",
+            "--tags",
         )
     return (await cmd_output(*_git, "rev-parse", rev))[1].strip()
 
@@ -182,6 +325,24 @@ async def get_hash_in_repo(repo_path: str, rev: str, fetch=True):
 
 
 def get_pre_commit_cache(repo_url: str, rev: str) -> Optional[str]:
+    """
+    Determine the cache location of a repository and rev.
+
+    This tries to find the location in the pre-commit cache where the
+    given rev of the given repository is already downloaded.
+
+    Parameters
+    ----------
+    repo_url : str
+        The URL of the repo.
+    rev : str
+        The revision of interest.
+
+    Returns
+    -------
+    Optional[str]
+        The path to the repository if available else None
+    """
     if not PRE_COMMIT_AVAILABLE:
         return None
 
@@ -266,6 +427,17 @@ def process_frozen_comment(comment: str) -> Optional[Tuple[str, str]]:
 
 @enum.unique
 class Rule(enum.Enum):
+    """
+    A enum of all enforcable rules.
+
+    Attributes
+    ----------
+    code : str
+        The one letter code assigned to the rule. (Must be unique)
+    template : str
+        A message template for complains derived from this rule
+    """
+
     #: Issued when a revision is not frozen although required
     FORCE_FREEZE = ("f", "Unfrozen revision: {rev}")
 
@@ -289,10 +461,11 @@ class Rule(enum.Enum):
     CHECK_COMMENTED_TAG = ("t", "Tag doesn't match frozen rev: {frozen}")
 
     def __new__(cls, code, template):
+        """Enum constructor processing additional fields."""
         obj = object.__new__(cls)
         obj._value_ = code
-        obj.code = code
-        obj.template = template
+        obj.code = code  # type: ignore
+        obj.template = template  # type: ignore
         return obj
 
 
@@ -300,7 +473,9 @@ EXCLUSIVE_RULES = [(Rule.FORCE_FREEZE, Rule.FORCE_UNFREEZE)]
 
 
 @dataclass()
-class Complain:
+class Complaint:
+    """A complain derived from a rule."""
+
     file: str
     line: int  # starting with 0
     column: int  # starting with 0
@@ -311,15 +486,33 @@ class Complain:
 
 
 class Linter:
+    """Lint files and issue complains."""
+
     def __init__(self, rules, fix) -> None:
+        """Init."""
         self.rules = rules
         self.fix = fix
-        self._complains: List[Complain] = []
+        self._complains: Dict[str, List[Complaint]] = {}
         self._current_file: Optional[str] = None
-        self._current_complains: Optional[List[Complain]] = None
+        self._current_complains: Optional[List[Complaint]] = None
 
     @classmethod
     async def get_tags(cls, repo_url: str, rev: str) -> List[str]:
+        """
+        Retrieve a list of tags for a given commit.
+
+        Parameters
+        ----------
+        repo_url : str
+            The URL of the repo the commit is in.
+        rev : str
+            A valid git commit reference.
+
+        Returns
+        -------
+        List[str]
+            A list of tags for referencing the given commit.
+        """
         logger.debug(f"Retrieving tags for {repo_url}@{rev}")
         tags = None
 
@@ -345,6 +538,21 @@ class Linter:
 
     @classmethod
     async def select_best_tag(cls, repo_url: str, rev: str) -> Optional[str]:
+        """
+        Select the best tag describing a revision.
+
+        Parameters
+        ----------
+        repo_url : str
+            The repo url.
+        rev : str
+            The commit to select a tag for.
+
+        Returns
+        -------
+        Optional[str]
+            The tag if any are found else None
+        """
         tags = await cls.get_tags(repo_url, rev)
         tag = min(
             filter(lambda s: "." in s, tags),
@@ -356,6 +564,23 @@ class Linter:
 
     @classmethod
     async def get_hash_for(cls, repo_url: str, rev: str) -> Optional[str]:
+        """
+        Retrieve the hash for a given tag.
+
+        This method is cached for the same combination of repo and rev.
+
+        Parameters
+        ----------
+        repo_url : str
+            The URL of the repo the commit is in.
+        rev : str
+            A valid git commit reference.
+
+        Returns
+        -------
+        str
+            The hex object name (hash) referenced.
+        """
         logger.debug(f"Retrieving hash for {repo_url}@{rev}")
         try:
             cached_repo = get_pre_commit_cache(repo_url, rev)
@@ -379,43 +604,46 @@ class Linter:
         return None
 
     def enabled(self, complain_or_rule):
+        """Whether a complain or rule is enabled."""
         if isinstance(complain_or_rule, Rule):
             return complain_or_rule.value in self.rules
-        if isinstance(complain_or_rule, Complain):
+        if isinstance(complain_or_rule, Complaint):
             return self.enabled(complain_or_rule.type)
         raise TypeError(f"Unsupported type {type(complain_or_rule)}")
 
     def should_fix(self, complain_or_rule):
+        """Whether fixing is enabled for a complain or rule."""
         if isinstance(complain_or_rule, Rule):
             return self.enabled(complain_or_rule) and complain_or_rule.value in self.fix
-        if isinstance(complain_or_rule, Complain):
+        if isinstance(complain_or_rule, Complaint):
             return complain_or_rule.fixable and self.should_fix(complain_or_rule.type)
 
-    @contextmanager
-    def file(self, file: str, complain_list: List[Complain]):
-        if self._current_file:
-            raise RuntimeError(f"Current file already set: {self._current_file}")
-
-        self._current_file = file
-        self._current_complains = complain_list
-        yield
-        self._complains.extend(self._current_complains)
-        self._current_file = None
-
-    def complain(self, type_: Rule, line: int, column: int, fixable: bool, **kwargs):
-        if not self._current_file:
-            raise RuntimeError("Current file not set.")
-
-        msg = type_.template.format(**kwargs)
-        c = Complain(self._current_file, line, column, type_, msg, fixable)
+    def complain(
+        self, file: str, type_: Rule, line: int, column: int, fixable: bool, **kwargs
+    ):
+        """Issue a complaint."""
+        msg = type_.template.format(**kwargs)  # type: ignore
+        c = Complaint(file, line, column, type_, msg, fixable)
 
         logger.debug(f"Issued {c}")
 
         if self.enabled(c):
-            self._current_complains.append(c)
+            self._complains.setdefault(file, []).append(c)
         return c
 
-    async def lint_repo(self, repo_yaml):
+    async def lint_repo(self, repo_yaml, file: str):
+        """
+        Check the entry for a given repo.
+
+        Parameters
+        ----------
+        repo_yaml : ruamel.yaml object
+            The parsed yaml.
+        file : str
+            The file to issue complaints for.
+        """
+        complain = partial(self.complain, file)
+
         repo_url = repo_yaml["repo"]
         rev = repo_yaml["rev"]
         line, column = repo_yaml.lc.value("rev")
@@ -440,13 +668,11 @@ class Linter:
         is_full_hash = len(rev) == SHA1_LENGTH / 4  # 40
 
         if is_short_hash:
-            self.complain(Rule.NO_ABBREV, line, column, False, rev=rev)
+            complain(Rule.NO_ABBREV, line, column, False, rev=rev)
 
         if is_short_hash or is_full_hash:
             # frozen hash
-            comp = self.complain(
-                Rule.FORCE_UNFREEZE, line, column, is_full_hash, rev=rev
-            )
+            comp = complain(Rule.FORCE_UNFREEZE, line, column, is_full_hash, rev=rev)
 
             if self.should_fix(comp):
                 # select best tag
@@ -465,7 +691,7 @@ class Linter:
             comp = None
             if comment_rev is None:
                 # no frozen: xxx comment
-                comp = self.complain(
+                comp = complain(
                     Rule.MISSING_FROZEN_COMMENT,
                     line,
                     comment_yaml.column if comment_yaml else column,
@@ -481,7 +707,7 @@ class Linter:
 
                 if comment_rev not in tags:
                     # wrong version
-                    comp = self.complain(
+                    comp = complain(
                         Rule.CHECK_COMMENTED_TAG,
                         line,
                         comment_yaml.column if comment_yaml else column,
@@ -505,7 +731,7 @@ class Linter:
 
         else:
             # unfrozen version
-            comp = self.complain(Rule.FORCE_FREEZE, line, column, True, rev=rev)
+            comp = complain(Rule.FORCE_FREEZE, line, column, True, rev=rev)
 
             if self.should_fix(comp):
                 # get full hash
@@ -526,7 +752,7 @@ class Linter:
             if not self.enabled(comp):
                 if comment_rev is not None:
                     # there is a frozen: xxx comment
-                    comp = self.complain(
+                    comp = complain(
                         Rule.EXCESS_FROZEN_COMMENT,
                         line,
                         comment_yaml.column or column,
@@ -543,26 +769,39 @@ class Linter:
                             del repo_yaml.ca.items["rev"]
                         comp.fixed = True
 
-    async def run(self, file: str, content: str) -> Tuple[str, List[Complain]]:
-        complains: List[Complain] = []
-        with self.file(file, complains):
-            # Load file
-            yaml = YAML()
-            yaml.preserve_quotes = True
-            _, ind, bsi = load_yaml_guess_indent(content)
-            yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
-            config_yaml = yaml.load(content)
+    async def run(self, content: str, file: str) -> Tuple[str, List[Complaint]]:
+        """
+        Lint a file.
 
-            logger.debug(f"Indentation detected: ind={ind} bsi={bsi}")
+        Parameters
+        ----------
+        content : str
+            The file contents to lint.
+        file : str
+            The file to issue complaints for.
 
-            # Lint
-            await gather(
-                *(self.lint_repo(repo_yaml) for repo_yaml in config_yaml["repos"])
-            )
+        Returns
+        -------
+        Tuple[str, List[Complaint]]
+            new contents, list of complaints
+        """
+        # Load file
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        _, ind, bsi = load_yaml_guess_indent(content)
+        yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
+        config_yaml = yaml.load(content)
+
+        logger.debug(f"Indentation detected: ind={ind} bsi={bsi}")
+
+        # Lint
+        await gather(
+            *(self.lint_repo(repo_yaml, file) for repo_yaml in config_yaml["repos"])
+        )
 
         stream = StringIO()
         yaml.dump(config_yaml, stream)
-        return stream.getvalue(), complains
+        return stream.getvalue(), self._complains.get(file, [])
 
 
 pattern_rich_markup_tag = r"(?<!\\)\[.*?\]"
@@ -570,10 +809,12 @@ regex_rich_markup_tag = re.compile(pattern_rich_markup_tag)
 
 
 def strip_rich_markup(string: str):
+    """Remove the markup for the rich library from a string."""
     return regex_rich_markup_tag.sub("", string)
 
 
 def get_parser():
+    """Construct a parser for the tui of this script."""
     parser = argparse.ArgumentParser()
 
     fix_group = parser.add_mutually_exclusive_group()
@@ -624,6 +865,7 @@ def get_parser():
 
 @contextmanager
 def output(*, colour: bool):
+    """Rich output context."""
     if not COLOUR_SUPPORT:
         console = None
 
@@ -681,17 +923,17 @@ async def main():
             content = file.read_text()
 
             files.append(file)
-            futures.append(linter.run(str(file), content))
+            futures.append(linter.run(content, file=file))
 
-        results: list[Tuple[str, List[Complain]]] = await gather(*futures)
+        results: list[Tuple[str, List[Complaint]]] = await gather(*futures)
 
-        for file, (content, complains) in zip(files, results):
+        for file, (content, complaints) in zip(files, results):
             if options.print:
                 out(content)
             elif options.fix:
                 file.write_text(content)
 
-            for comp in complains:
+            for comp in complaints:
                 fix_status = (
                     fixed_str
                     if comp.fixed
@@ -711,11 +953,16 @@ async def main():
                 )
 
 
+# TODO YAML error
+# TODO Missing fields
+# TODO disable flag
+
+
 def run():
+    """Run the program from synchronous context."""
     asyncio.run(main())
 
 
-# TODO docstrings
-
 if __name__ == "__main__":
+    run()
     run()

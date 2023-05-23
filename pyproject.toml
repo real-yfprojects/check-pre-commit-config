@@ -47,7 +47,17 @@ target-version = ['py37']
 select  = ["T", "I", "F", "D", "E", "W", "FLY", "RUF", "PL"]
 fixable = ["I"]
 
-ignore = ["D202", "D203", "D205", "D401", "D212", "E501"]
+ignore = [
+    "D202",
+    "D203",
+    "D205",
+    "D401",
+    "D212",
+    "E501",
+    "PLR0913",
+    "PLR0912",
+    "PLR0915",
+]
 
 # Same as Black.
 line-length = 88
