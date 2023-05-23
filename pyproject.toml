@@ -31,7 +31,7 @@ rich        = { version = "^13.3.5", extras = ["colour"] }
 pre-commit  = { version = "^3.3.2", extras = ["pre-commit"], python = ">=3.8" }
 
 [tool.poetry.scripts]
-check-pre-commit-config-frozen = "check_pre_commit_config_frozen:main"
+check-pre-commit-config-frozen = "check_pre_commit_config_frozen:run"
 
 
 [tool.poetry.group.lint.dependencies]

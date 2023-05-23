@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import enum
 import logging
 import os
@@ -11,7 +12,8 @@ import re
 import sqlite3
 import subprocess
 import tempfile
-from contextlib import contextmanager
+from asyncio import create_subprocess_exec, gather
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from io import StringIO
@@ -85,7 +87,7 @@ def no_git_env(_env: Mapping[str, str] | None = None) -> dict[str, str]:
     }
 
 
-def cmd_output(
+async def cmd_output(
     *cmd: str,
     check: bool = True,
     **kwargs,
@@ -93,9 +95,11 @@ def cmd_output(
     for arg in ("stdin", "stdout", "stderr"):
         kwargs.setdefault(arg, subprocess.PIPE)
 
-    proc = subprocess.Popen(cmd, text=True, **kwargs)
-    stdout, stderr = proc.communicate()
-    returncode = int(proc.returncode)
+    proc = await create_subprocess_exec(*cmd, **kwargs)
+    stdout_bin, stderr_bin = await proc.communicate()
+    stdout = stdout_bin.decode()
+    stderr = stderr_bin.decode()
+    returncode = cast(int, proc.returncode)
 
     if returncode:
         logger.debug(f"Output from '{cmd}': {stdout}")
@@ -106,37 +110,37 @@ def cmd_output(
     return returncode, stdout, stderr
 
 
-def init_repo(path: str, remote: str) -> None:
+async def init_repo(path: str, remote: str) -> None:
     if os.path.isdir(remote):
         remote = os.path.abspath(remote)
 
     git = ("git", *NO_FS_MONITOR)
     env = no_git_env()
     # avoid the user's template so that hooks do not recurse
-    cmd_output(*git, "init", "--template=", path, env=env)
-    cmd_output(*git, "remote", "add", "origin", remote, cwd=path, env=env)
+    await cmd_output(*git, "init", "--template=", path, env=env)
+    await cmd_output(*git, "remote", "add", "origin", remote, cwd=path, env=env)
 
 
-@contextmanager
-def tmp_repo(repo: str):
+@asynccontextmanager
+async def tmp_repo(repo: str):
     with tempfile.TemporaryDirectory() as tmp:
         _git = ("git", *NO_FS_MONITOR, "-C", tmp)
         # init repo
-        init_repo(tmp, repo)
-        cmd_output(*_git, "config", "extensions.partialClone", "true")
-        cmd_output(*_git, "config", "fetch.recurseSubmodules", "false")
+        await init_repo(tmp, repo)
+        await cmd_output(*_git, "config", "extensions.partialClone", "true")
+        await cmd_output(*_git, "config", "fetch.recurseSubmodules", "false")
 
         yield Path(tmp)
 
 
 @lru_cache()
-def get_tags(repo_url: str, hash: str) -> List[str]:
-    with tmp_repo(repo_url) as repo_path:
-        return get_tags_in_repo(repo_path, hash)
+async def get_tags(repo_url: str, hash: str) -> List[str]:
+    async with tmp_repo(repo_url) as repo_path:
+        return await get_tags_in_repo(repo_path, hash)
 
 
 @lru_cache()
-def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
+async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
     _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
 
     if fetch:
@@ -144,32 +148,34 @@ def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True):
         # The --filter options makes use of git's partial clone feature.
         # It only fetches the commit history but not the commit contents.
         # Still it fetches all commits reachable from the given commit which is way more than we need
-        cmd_output(*_git, "config", "extensions.partialClone", "true")
-        cmd_output(
+        await cmd_output(*_git, "config", "extensions.partialClone", "true")
+        await cmd_output(
             *_git, "fetch", "origin", hash, "--quiet", "--filter=tree:0", "--tags"
         )
 
     # determine closest tag
-    closest_tag = cmd_output(*_git, "describe", hash, "--abbrev=0", "--tags")[1]
+    closest_tag = (await cmd_output(*_git, "describe", hash, "--abbrev=0", "--tags"))[1]
     closest_tag = closest_tag.strip()
 
     # determine tags
-    out = cmd_output(*_git, "tag", "--points-at", f"refs/tags/{closest_tag}")[1]
+    out = (await cmd_output(*_git, "tag", "--points-at", f"refs/tags/{closest_tag}"))[1]
     return out.splitlines()
 
 
 @lru_cache()
-def get_hash(repo_url: str, rev: str) -> str:
-    with tmp_repo(repo_url) as repo_path:
-        _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
-        cmd_output(*_git, "fetch", "origin", rev, "--quiet", "--depth=1", "--tags")
-        return get_hash_in_repo(repo_path, rev)
+async def get_hash(repo_url: str, rev: str) -> str:
+    async with tmp_repo(repo_url) as repo_path:
+        return await get_hash_in_repo(repo_path, rev)
 
 
 @lru_cache()
-def get_hash_in_repo(repo_path: str, rev: str):
+async def get_hash_in_repo(repo_path: str, rev: str, fetch=True):
     _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
-    return cmd_output(*_git, "rev-parse", rev)[1].strip()
+    if fetch:
+        await cmd_output(
+            *_git, "fetch", "origin", rev, "--quiet", "--depth=1", "--tags"
+        )
+    return (await cmd_output(*_git, "rev-parse", rev))[1].strip()
 
 
 # -- Pre-commit --------------------------------------------------------------
@@ -313,7 +319,7 @@ class Linter:
         self._current_complains: Optional[List[Complain]] = None
 
     @classmethod
-    def get_tags(cls, repo_url: str, rev: str):
+    async def get_tags(cls, repo_url: str, rev: str) -> List[str]:
         logger.debug(f"Retrieving tags for {repo_url}@{rev}")
         tags = None
 
@@ -321,7 +327,7 @@ class Linter:
             cached_repo = get_pre_commit_cache(repo_url, rev)
             if cached_repo:
                 logger.info(f"Found repo cached by pre-commit at {cached_repo}")
-                tags = get_tags_in_repo(cached_repo, rev)
+                tags = await get_tags_in_repo(cached_repo, rev)
             else:
                 logger.info("Couldn't find cached repo in pre-commit cache.")
         except (sqlite3.Error, sqlite3.Warning, subprocess.CalledProcessError):
@@ -330,7 +336,7 @@ class Linter:
         if tags is None:
             logger.debug("Checking out repo.")
             try:
-                tags = get_tags(repo_url, rev)
+                tags = await get_tags(repo_url, rev)
             except subprocess.CalledProcessError:
                 logger.exception("Couldn't retrieve tags.")
 
@@ -338,8 +344,8 @@ class Linter:
         return tags or []
 
     @classmethod
-    def select_best_tag(cls, repo_url: str, rev: str):
-        tags = cls.get_tags(repo_url, rev)
+    async def select_best_tag(cls, repo_url: str, rev: str) -> Optional[str]:
+        tags = await cls.get_tags(repo_url, rev)
         tag = min(
             filter(lambda s: "." in s, tags),
             key=len,
@@ -349,24 +355,24 @@ class Linter:
         return tag
 
     @classmethod
-    def get_hash_for(cls, repo_url: str, rev: str):
+    async def get_hash_for(cls, repo_url: str, rev: str) -> Optional[str]:
         logger.debug(f"Retrieving hash for {repo_url}@{rev}")
         try:
             cached_repo = get_pre_commit_cache(repo_url, rev)
             if cached_repo:
                 logger.info(f"Found repo cached by pre-commit at {cached_repo}")
                 try:
-                    return get_hash_in_repo(cached_repo, rev, fetch=False)
+                    return await get_hash_in_repo(cached_repo, rev, fetch=False)
                 except subprocess.CalledProcessError:
                     logger.debug("Fetching tags to pre-commit cache.")
-                    return get_hash_in_repo(cached_repo, rev, fetch=True)
+                    return await get_hash_in_repo(cached_repo, rev, fetch=True)
             else:
                 logger.info("Couldn't find cached repo in pre-commit cache.")
         except (sqlite3.Error, sqlite3.Warning, subprocess.CalledProcessError):
             logger.exception("Couldn't use pre-commit cache.")
 
         try:
-            return get_hash(repo_url, rev)
+            return await get_hash(repo_url, rev)
         except subprocess.CalledProcessError:
             logger.exception("Couldn't retrieve hash.")
 
@@ -409,7 +415,7 @@ class Linter:
             self._current_complains.append(c)
         return c
 
-    def lint_repo(self, repo_yaml):
+    async def lint_repo(self, repo_yaml):
         repo_url = repo_yaml["repo"]
         rev = repo_yaml["rev"]
         line, column = repo_yaml.lc.value("rev")
@@ -444,7 +450,7 @@ class Linter:
 
             if self.should_fix(comp):
                 # select best tag
-                tag = self.select_best_tag(repo_url, rev)
+                tag = await self.select_best_tag(repo_url, rev)
 
                 if tag:
                     # adjust rev
@@ -471,7 +477,7 @@ class Linter:
                 # need full_hash to identify commit
 
                 # determine tags attached to closest commit with a tag
-                tags = self.get_tags(repo_url, rev)
+                tags = await self.get_tags(repo_url, rev)
 
                 if comment_rev not in tags:
                     # wrong version
@@ -485,7 +491,7 @@ class Linter:
 
             if comp and self.should_fix(comp):  # only true when fixable
                 # select best tag
-                tag = self.select_best_tag(repo_url, rev)
+                tag = await self.select_best_tag(repo_url, rev)
 
                 if tag:
                     # adjust comment
@@ -503,7 +509,7 @@ class Linter:
 
             if self.should_fix(comp):
                 # get full hash
-                hash = self.get_hash_for(repo_url, rev)
+                hash = await self.get_hash_for(repo_url, rev)
 
                 if hash:
                     # adjust rev
@@ -537,7 +543,7 @@ class Linter:
                             del repo_yaml.ca.items["rev"]
                         comp.fixed = True
 
-    def run(self, file: str, content: str) -> Tuple[str, List[Complain]]:
+    async def run(self, file: str, content: str) -> Tuple[str, List[Complain]]:
         complains: List[Complain] = []
         with self.file(file, complains):
             # Load file
@@ -550,8 +556,9 @@ class Linter:
             logger.debug(f"Indentation detected: ind={ind} bsi={bsi}")
 
             # Lint
-            for repo_yaml in config_yaml["repos"]:
-                self.lint_repo(repo_yaml)
+            await gather(
+                *(self.lint_repo(repo_yaml) for repo_yaml in config_yaml["repos"])
+            )
 
         stream = StringIO()
         yaml.dump(config_yaml, stream)
@@ -632,7 +639,7 @@ def output(*, colour: bool):
     yield out, console
 
 
-def main():
+async def main():
     """The main entry point."""
     parser = get_parser()
     options = parser.parse_args()
@@ -665,13 +672,20 @@ def main():
 
         linter = Linter(rules, options.fix)
 
+        futures = []
+        files: List[Path] = []
         for file in options.files:
             file = cast(Path, file)
             logger.info(f"Processing {file}...")
 
             content = file.read_text()
-            content, complains = linter.run(str(file), content)
 
+            files.append(file)
+            futures.append(linter.run(str(file), content))
+
+        results: list[Tuple[str, List[Complain]]] = await gather(*futures)
+
+        for file, (content, complains) in zip(files, results):
             if options.print:
                 out(content)
             elif options.fix:
@@ -697,8 +711,11 @@ def main():
                 )
 
 
-# TODO concurrency
+def run():
+    asyncio.run(main())
+
+
 # TODO docstrings
 
 if __name__ == "__main__":
-    main()
+    run()
