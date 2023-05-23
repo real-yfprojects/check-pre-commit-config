@@ -1,0 +1,10 @@
+- id: check-frozen
+  name: check frozen revs in .pre-commit-config.yaml
+  description: Enforce rules regarding frozen revs and corresponding comments in .pre-commit-config.yaml
+  language: python
+  entry: check-pre-commit-config-frozen
+  files: '^\.pre-commit-config\.yaml$'
+  stages: [pre-commit, pre-merge-commit, manual]
+  args:
+    - "--strict"
+    - "--fix-all"
