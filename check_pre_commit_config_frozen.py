@@ -495,7 +495,7 @@ class Complaint:
 class Linter:
     """Lint files and issue complains."""
 
-    def __init__(self, rules, fix) -> None:
+    def __init__(self, rules: set[str], fix: set[str]) -> None:
         """Init."""
         self.rules = rules
         self.fix = fix
@@ -878,10 +878,15 @@ class Linter:
 pattern_rich_markup_tag = r"(?<!\\)\[.*?\]"
 regex_rich_markup_tag = re.compile(pattern_rich_markup_tag)
 
+pattern_rich_markup_escape = r"(?<!\\)(\[)"
+regex_rich_markup_escape = re.compile(pattern_rich_markup_escape)
+
 
 def strip_rich_markup(string: str):
     """Remove the markup for the rich library from a string."""
-    return regex_rich_markup_tag.sub("", string)
+    string = regex_rich_markup_tag.sub("", string)
+    string = regex_rich_markup_escape.sub(lambda m: m[0], string)
+    return string
 
 
 def get_parser():
@@ -898,13 +903,9 @@ def get_parser():
     )
 
     rule_group = parser.add_mutually_exclusive_group()
-    rule_group.add_argument("--rules", default="", dest="rules")
-    rule_group.add_argument(
-        "--strict",
-        action="store_const",
-        const="".join(r.value for r in Rule if not r == Rule.FORCE_UNFREEZE),
-        dest="rules",
-    )
+    rule_group.add_argument("--rules", default="")
+    rule_group.add_argument("--disable", default="")
+    parser.add_argument("--strict", action="store_true")
 
     parser.add_argument(
         "--print",
@@ -959,7 +960,15 @@ async def main():
 
     logger.setLevel(max(logging.ERROR - options.verbose * 10, 10))
 
-    rules: str = options.rules
+    # process rules
+    rules = set()
+    if options.strict:
+        rules = set(r.value for r in Rule if r != Rule.FORCE_UNFREEZE)
+    elif not options.rules:
+        rules = set(r.value for r in Rule)
+    rules |= set(options.rules)
+    rules -= set(options.disable)
+
     output_template: str = options.format
 
     with output(colour=options.colour) as (out, console):
@@ -983,7 +992,7 @@ async def main():
                         )
                     found = rule.value
 
-        linter = Linter(rules, options.fix)
+        linter = Linter(rules, set(options.fix))
 
         futures = []
         files: List[Path] = []
@@ -1030,16 +1039,10 @@ async def main():
         return rc
 
 
-# TODO YAML error
-# TODO Missing fields
-# TODO disable flag
-
-
 def run():
     """Run the program from synchronous context."""
     return asyncio.run(main())
 
 
 if __name__ == "__main__":
-    run()
     run()
