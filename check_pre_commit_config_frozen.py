@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Tuple, cast
 
 from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError, YAMLWarning
 from ruamel.yaml.util import load_yaml_guess_indent
 
 try:
@@ -438,6 +439,12 @@ class Rule(enum.Enum):
         A message template for complains derived from this rule
     """
 
+    #: Issued when parsing a file fails and the file therefore doesn't contain valid yaml.
+    VALID_YAML = ("y", "Error parsing yaml: {problem}")
+
+    #: Issued when a key (rev or repo) is missing from a repo config item.
+    INVALID_CONFIG = ("c", "{msg}")
+
     #: Issued when a revision is not frozen although required
     FORCE_FREEZE = ("f", "Unfrozen revision: {rev}")
 
@@ -558,7 +565,9 @@ class Linter:
             filter(lambda s: "." in s, tags),
             key=len,
             default=None,
-        ) or min(tags, key=len, default=None)
+        ) or min(
+            tags, key=len, default=None  # type: ignore[arg-type]
+        )
         logger.debug(f"Selected {tag}")
         return tag
 
@@ -619,7 +628,7 @@ class Linter:
             return complain_or_rule.fixable and self.should_fix(complain_or_rule.type)
 
     def complain(
-        self, file: str, type_: Rule, line: int, column: int, fixable: bool, **kwargs
+        self, file: str, type_: Rule, line: int, column: int, fixable: bool, /, **kwargs
     ):
         """Issue a complaint."""
         msg = type_.template.format(**kwargs)  # type: ignore
@@ -631,18 +640,50 @@ class Linter:
             self._complains.setdefault(file, []).append(c)
         return c
 
-    async def lint_repo(self, repo_yaml, file: str):
+    async def lint_repo(self, repo_list_yaml, index: int, file: str):
         """
         Check the entry for a given repo.
 
         Parameters
         ----------
-        repo_yaml : ruamel.yaml object
-            The parsed yaml.
+        repo_list_yaml : ruamel.yaml object
+            The parsed yaml list containg the repo to lint.
+        index : int
+            The index of `repo_yaml` in the repo list.
         file : str
             The file to issue complaints for.
         """
         complain = partial(self.complain, file)
+
+        repo_yaml = repo_list_yaml[index]
+
+        if not isinstance(repo_yaml, dict):
+            complain(
+                Rule.INVALID_CONFIG,
+                *repo_list_yaml.lc.item(index),
+                False,
+                msg=f"Repo {index} isn't a mapping.",
+            )
+            return
+
+        for key in ["rev", "repo"]:
+            if key not in repo_yaml:
+                complain(
+                    Rule.INVALID_CONFIG,
+                    repo_yaml.lc.line,
+                    repo_yaml.lc.col,
+                    False,
+                    msg=f"Missing yaml key `{key}` for repo {index}",
+                )
+                return
+            if not isinstance(repo_yaml[key], str):
+                complain(
+                    Rule.INVALID_CONFIG,
+                    *repo_yaml.lc.value(key),
+                    False,
+                    msg=f"Value for `{key}` in repo {index} isn't a string.",
+                )
+                return
 
         repo_url = repo_yaml["repo"]
         rev = repo_yaml["rev"]
@@ -786,17 +827,47 @@ class Linter:
             new contents, list of complaints
         """
         # Load file
-        yaml = YAML()
-        yaml.preserve_quotes = True
-        _, ind, bsi = load_yaml_guess_indent(content)
-        yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
-        config_yaml = yaml.load(content)
+        try:
+            yaml = YAML()
+            yaml.preserve_quotes = True
+            _, ind, bsi = load_yaml_guess_indent(content)
+            yaml.indent(mapping=bsi, sequence=ind, offset=bsi)
+            config_yaml = yaml.load(content)
+        except (YAMLError, YAMLWarning) as exc:
+            logger.info(f"Invalid YAML in file {file}", exc_info=True)
+
+            # Retrieve more information from MarkedYAMLError
+            # to issue a complain for violating yaml syntax
+            mark = getattr(exc, "problem_mark", None)
+            problem = getattr(exc, "problem", "Run with `-v` for more details")
+            line, column = (mark.line, mark.column) if mark else (0, 0)
+            self.complain(file, Rule.VALID_YAML, line, column, False, problem=problem)
+
+            return content, self._complains.get(file, [])
 
         logger.debug(f"Indentation detected: ind={ind} bsi={bsi}")
 
+        # config_yaml must be dictionary == mapping at toplevel of config file
+        if not isinstance(config_yaml, dict):
+            self.complain(
+                file, Rule.INVALID_CONFIG, 0, 0, False, msg="Toplevel isn't a mapping"
+            )
+            return content, self._complains.get(file, [])
+
+        repos_yaml = config_yaml.get("repos", None) or []
+        if not isinstance(repos_yaml, list):
+            self.complain(
+                file,
+                Rule.INVALID_CONFIG,
+                *config_yaml.lc.value("repos"),
+                False,
+                msg="Object for key `repo` isn't a sequence.",
+            )
+            return content, self._complains.get(file, [])
+
         # Lint
         await gather(
-            *(self.lint_repo(repo_yaml, file) for repo_yaml in config_yaml["repos"])
+            *(self.lint_repo(repos_yaml, i, file) for i in range(len(repos_yaml)))
         )
 
         stream = StringIO()
@@ -845,7 +916,7 @@ def get_parser():
         "--format",
         help="The output format for complains. Use python string formatting. "
         "Rich markup is also supported.",
-        default="{fix}[{code}] {file}:{line}:{column} {msg}",
+        default="{fix}\\[{code}] {file}:{line}:{column} {msg}",
     )
 
     parser.add_argument(
@@ -876,7 +947,7 @@ def output(*, colour: bool):
         console = Console(no_color=None if colour else True)
 
         def out(string: str):
-            console.print(string, highlight=False)
+            console.print(string, highlight=False)  # type: ignore
 
     yield out, console
 
@@ -923,7 +994,7 @@ async def main():
             content = file.read_text()
 
             files.append(file)
-            futures.append(linter.run(content, file=file))
+            futures.append(linter.run(content, file=str(file)))
 
         results: list[Tuple[str, List[Complaint]]] = await gather(*futures)
 
