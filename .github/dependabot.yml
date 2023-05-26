@@ -5,7 +5,18 @@
 
 version: 2
 updates:
-  - package-ecosystem: "poetry" # See documentation for possible values
+  # Maintain dependencies for Poetry
+  - package-ecosystem: "pip"
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "[ga] "
+
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/" # Location of package manifests
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "[ga] "
