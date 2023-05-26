@@ -43,13 +43,13 @@ The rules `u` and `f` cannot be enabled together.
 
 ## Versioning
 
-In SemVer inspired fashion, the following rules determine compatibility between different versions of this hook.
+In adherence to [semver](https://semver.org/) the following rules determine compatibility between different versions of this hook.
 
-| Version | Increased when...                                                                                                                                                                        |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MAJOR   | the behaviour or the code of a rule is changed, </br> a rule is removed, <br> The default configuration of this hook is changed, <br> compatibility is majorly broken in some other way. |
-| MINOR   | rules are added, </br> the command line signature is changed.                                                                                                                            |
-| PATCH   | All fixes/changes that aren't handled above.                                                                                                                                             |
+| Version | Increased when...                                                                                                                                                                                                                                          |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MAJOR   | the behaviour or the code of a rule is changed, </br> a rule is removed, <br> the default configuration of this hook is changed, <br> commandline arguments are renamed/repurposed/removed, </br> compatibility is majorly broken in some other major way. |
+| MINOR   | rules are added, </br> new commandline options are introduced.                                                                                                                                                                                             |
+| PATCH   | All fixes/changes that aren't handled above.                                                                                                                                                                                                               |
 
 ## Args
 
