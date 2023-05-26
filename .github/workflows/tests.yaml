@@ -1,7 +1,14 @@
+name: Run python tests for hook script.
+
 on:
   workflow_call:
   workflow_dispatch:
   push:
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/tests.yaml"
+      - ".github/action/**"
   pull_request:
 
 concurrency:
