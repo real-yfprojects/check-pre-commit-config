@@ -63,7 +63,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           python-version: ${{ matrix.python-version }}
-          install-options: --without lint ${{ matrix.extras && format('--extras "{0}"', matrix.extras) || '' }}
+          install-options: --without lint ${{ matrix.extras && format('--extras "{0}"', matrix.extras) || '' }} --sync
 
       - name: Run Tests
         run: make test
