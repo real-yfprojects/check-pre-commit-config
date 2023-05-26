@@ -893,19 +893,27 @@ def get_parser():
     """Construct a parser for the tui of this script."""
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--rules", default="", help="Enable rules.")
+    parser.add_argument(
+        "--disable",
+        default="",
+        help="Disable rules overriding any other cmd argument. When passed alone, it will enable all rules not specified.",
+    )
+    parser.add_argument(
+        "--strict", action="store_true", help="Enable the rules `ycfamt`."
+    )
+
     fix_group = parser.add_mutually_exclusive_group()
-    fix_group.add_argument("--fix", default="", dest="fix")
+    fix_group.add_argument(
+        "--fix", default="", dest="fix", help="Select rules to automatically fix."
+    )
     fix_group.add_argument(
         "--fix-all",
         action="store_const",
         const="".join(r.value for r in Rule),
         dest="fix",
+        help="Enable all fixes available.",
     )
-
-    rule_group = parser.add_mutually_exclusive_group()
-    rule_group.add_argument("--rules", default="")
-    rule_group.add_argument("--disable", default="")
-    parser.add_argument("--strict", action="store_true")
 
     parser.add_argument(
         "--print",
@@ -928,9 +936,21 @@ def get_parser():
         dest="colour",
         help="Disable colourful output",
     )
-    parser.add_argument("--verbose", "-v", action="count", default=0)
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help="Increase level of debug logs displayed.",
+    )
 
-    parser.add_argument("files", type=Path, nargs="+", metavar="file")
+    parser.add_argument(
+        "files",
+        type=Path,
+        nargs="+",
+        metavar="file",
+        help="The files to enforce the rules on.",
+    )
 
     return parser
 
@@ -963,7 +983,7 @@ async def main():
     # process rules
     rules = set()
     if options.strict:
-        rules = set(r.value for r in Rule if r != Rule.FORCE_UNFREEZE)
+        rules = set("ycfamt")
     elif not options.rules:
         rules = set(r.value for r in Rule)
     rules |= set(options.rules)
