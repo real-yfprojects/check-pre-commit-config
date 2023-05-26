@@ -22,7 +22,7 @@ inputs:
   cache-python:
     description: Whether to cache poetry venvs
     required: false
-    default: "false"
+    default: "true"
 
 runs:
   using: "composite"
