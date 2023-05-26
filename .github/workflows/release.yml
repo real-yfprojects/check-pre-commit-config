@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Draft the release
     steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
       - name: Determine old tag name
         id: tag
         run: |
@@ -29,10 +32,12 @@ jobs:
 
       - name: List update
         id: assets
+        if: env.old_tag
         run: |
           sed -i -e 's/${{ env.old_tag }}/${{ inputs.tagname }}/g' README.md
 
       - name: Commit to master and push
+        if: env.old_tag
         run: |
           email=$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com
           name=$GITHUB_ACTOR
