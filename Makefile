@@ -1,4 +1,4 @@
-.PHONY = tests
+.PHONY = test
 
-tests:
+test:
 	python -m unittest
