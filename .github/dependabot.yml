@@ -11,7 +11,8 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "[ga] "
+      prefix: "[poetry] "
+    versioning-strategy: increase-if-necessary
 
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
