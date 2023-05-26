@@ -628,7 +628,7 @@ class Linter:
             return complain_or_rule.fixable and self.should_fix(complain_or_rule.type)
 
     def complain(
-        self, file: str, type_: Rule, line: int, column: int, fixable: bool, /, **kwargs
+        self, file: str, type_: Rule, line: int, column: int, fixable: bool, **kwargs
     ):
         """Issue a complaint."""
         msg = type_.template.format(**kwargs)  # type: ignore
