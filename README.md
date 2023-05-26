@@ -1,4 +1,4 @@
-# check-pre-commit-config-frozen
+# check-pre-commit-config
 
 [![Latest GitHub release](https://img.shields.io/github/v/release/real-yfprojects/check-pre-commit-config)](https://github.com/real-yfprojects/check-pre-commit-config/releases)
 [![Github License](https://img.shields.io/github/license/real-yfprojects/check-pre-commit-config-frozen?color=bd0000)](https://github.com/real-yfprojects/check-pre-commit-config-frozen/blob/master/LICENSE)
