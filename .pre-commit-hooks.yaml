@@ -5,6 +5,7 @@
   entry: check-pre-commit-config-frozen
   files: '^\.pre-commit-config\.yaml$'
   stages: [pre-commit, pre-merge-commit, manual]
+  additional_dependencies: [".[pre-commit,colour]"]
   args:
     - "--strict"
     - "--fix-all"
