@@ -33,6 +33,8 @@ pre-commit  = { version = "^3.3.2", optional = true, python = ">=3.8" }
 [tool.poetry.extras]
 pre-commit = ["pre-commit"]
 colour     = ["rich"]
+# includes all extras above
+all = ["pre-commit", "rich"]
 
 [tool.poetry.scripts]
 check-pre-commit-config-frozen = "check_pre_commit_config_frozen:run"
