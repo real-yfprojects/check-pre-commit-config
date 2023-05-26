@@ -28,16 +28,18 @@ Revisions are considered frozen when a _hex object name_ is used. That is a hash
 
 #### Rules
 
-| Code | Fixable | Enforces that...                                                                                                                   |
-| ---- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `y`  | ❌      | the files can be processed by the yaml parser without error.                                                                       |
-| `c`  | ❌      | the files contain the pre-commit configuration elements the other checks will run on.                                              |
-| `f`  | ✅      | all revisions are frozen.                                                                                                          |
-| `u`  | ✅      | no revisions are frozen.                                                                                                           |
-| `a`  | ❌      | no revision is used that could be an abbreviated hash (hex object name).                                                           |
-| `m`  | ✅      | there is a comment of the form `frozen: xxx` for each frozen revision.                                                             |
-| `e`  | ✅      | unfrozen revisions do not have a comment of the form `frozen: xxx`                                                                 |
-| `t`  | ✅      | the tag mentioned in the comment of the form `frozen: xxx` matches the hash used as a revision. (only applies for frozen comments) |
+<!-- For some reason github improperly displays the ✅ without colour -->
+
+| Code | Fixable            | Enforces that...                                                                                                                   |
+| ---- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `y`  | ❌                 | the files can be processed by the yaml parser without error.                                                                       |
+| `c`  | ❌                 | the files contain the pre-commit configuration elements the other checks will run on.                                              |
+| `f`  | :heavy_check_mark: | all revisions are frozen.                                                                                                          |
+| `u`  | :heavy_check_mark: | no revisions are frozen.                                                                                                           |
+| `a`  | ❌                 | no revision is used that could be an abbreviated hash (hex object name).                                                           |
+| `m`  | :heavy_check_mark: | there is a comment of the form `frozen: xxx` for each frozen revision.                                                             |
+| `e`  | :heavy_check_mark: | unfrozen revisions do not have a comment of the form `frozen: xxx`                                                                 |
+| `t`  | :heavy_check_mark: | the tag mentioned in the comment of the form `frozen: xxx` matches the hash used as a revision. (only applies for frozen comments) |
 
 The rules `u` and `f` cannot be enabled together.
 
