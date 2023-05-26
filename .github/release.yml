@@ -1,0 +1,23 @@
+# Configure automatically generated release notes.
+
+changelog:
+  exclude:
+    authors:
+      - dependabot
+  categories:
+    - title: Breaking Changes 💥
+      labels:
+        - pr:default-changed
+        - pr:rules-changed
+        - pr:breaking
+        - pr:cmd-signature-changed
+    - title: "New Features :sparkles:"
+      labels:
+        - pr:feature
+        - pr:rule-added
+    - title: Fixes 🐛
+      labels:
+        - pr:fixes
+    - title: "Other Changes :bulb:"
+      labels:
+        - "*"
