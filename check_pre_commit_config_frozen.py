@@ -399,13 +399,13 @@ def is_hash(rev: str) -> bool:
 # A version can be frozen to every valid tag name or even any revision identifier
 # as returned by `git describe`. The frozen comment can be followed by
 # arbitrary text e.g. containing further explanation
-regex_frozen_comment = r"#( frozen: (?P<rev>\S+))?(?P<note> .*)?"
+regex_frozen_comment = r"# frozen: (?P<rev>\S+)(?P<note> .*)?"
 pattern_frozen_comment = re.compile(regex_frozen_comment)
 
 comment_template = "frozen: {rev}{note}"
 
 
-def process_frozen_comment(comment: str) -> Optional[Tuple[str, str]]:
+def process_frozen_comment(comment: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Check whether a comment specifies a frozen rev and extract its info.
 
@@ -421,7 +421,7 @@ def process_frozen_comment(comment: str) -> Optional[Tuple[str, str]]:
     """
     match = pattern_frozen_comment.fullmatch(comment)
     if not match:
-        return None
+        return None, comment
 
     return match["rev"], match["note"]
 
