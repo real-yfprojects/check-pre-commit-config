@@ -15,10 +15,22 @@ import tempfile
 from asyncio import create_subprocess_exec, gather
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
-from functools import lru_cache, partial
+from functools import partial, wraps
 from io import StringIO
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Mapping, Optional, Tuple, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Coroutine,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError, YAMLWarning
@@ -43,6 +55,32 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+
+# -- Utils -------------------------------------------------------------------
+
+T = TypeVar("T")
+
+
+class async_cache:
+    def __init__(self, cache_dict=None):
+        self._dict = cache_dict or {}
+
+    def __call__(
+        self, func: Callable[..., Coroutine[None, None, T]]
+    ) -> Callable[..., Coroutine[None, None, T]]:
+        @wraps(func)
+        async def get(*args, **kwargs):
+            key = (args, tuple(map(tuple, kwargs.items())))
+            try:
+                return self._dict[key]
+            except KeyError:
+                value = await func(*args, **kwargs)
+                self._dict[key] = value
+                return value
+
+        return get
+
 
 # -- Git ---------------------------------------------------------------------
 
@@ -198,7 +236,7 @@ async def tmp_repo(repo: str) -> AsyncGenerator[Path, Any]:
         yield Path(tmp)
 
 
-@lru_cache()
+@async_cache()
 async def get_tags(repo_url: str, hash: str) -> List[str]:
     """
     Retrieve a list of tags for a given commit.
@@ -221,7 +259,7 @@ async def get_tags(repo_url: str, hash: str) -> List[str]:
         return await get_tags_in_repo(repo_path, hash)
 
 
-@lru_cache()
+@async_cache()
 async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True) -> List[str]:
     """
     Retrieve a list of tags for a given commit.
@@ -263,7 +301,7 @@ async def get_tags_in_repo(repo_path: str, hash: str, fetch: bool = True) -> Lis
     return out.splitlines()
 
 
-@lru_cache()
+@async_cache()
 async def get_hash(repo_url: str, rev: str) -> str:
     """
     Retrieve the hash for a given tag.
@@ -286,7 +324,7 @@ async def get_hash(repo_url: str, rev: str) -> str:
         return await get_hash_in_repo(repo_path, rev)
 
 
-@lru_cache()
+@async_cache()
 async def get_hash_in_repo(repo_path: str, rev: str, fetch=True) -> str:
     """
     Retrieve the hash for a given tag.
