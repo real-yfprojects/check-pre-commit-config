@@ -1,6 +1,6 @@
 # check-pre-commit-config
 
-[![Latest GitHub release](https://img.shields.io/github/v/release/real-yfprojects/check-pre-commit-config)](https://github.com/real-yfprojects/check-pre-commit-config/releases)
+[![GitHub release](https://img.shields.io/github/v/release/real-yfprojects/check-pre-commit-config?include_prereleases)](https://github.com/real-yfprojects/check-pre-commit-config/releases)
 [![Github License](https://img.shields.io/github/license/real-yfprojects/check-pre-commit-config-frozen?color=bd0000)](https://github.com/real-yfprojects/check-pre-commit-config-frozen/blob/master/LICENSE)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
