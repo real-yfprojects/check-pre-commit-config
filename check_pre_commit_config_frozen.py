@@ -309,6 +309,7 @@ async def get_hash_in_repo(repo_path: str, rev: str, fetch=True) -> str:
     """
     _git = ("git", *NO_FS_MONITOR, "-C", repo_path)
     if fetch:
+        await cmd_output(*_git, "config", "extensions.partialClone", "true")
         await cmd_output(
             *_git,
             "fetch",
@@ -984,7 +985,7 @@ async def main():
     rules = set()
     if options.strict:
         rules = set("ycfamt")
-    elif not options.rules:
+    elif not options.rules and options.disable:
         rules = set(r.value for r in Rule)
     rules |= set(options.rules)
     rules -= set(options.disable)
