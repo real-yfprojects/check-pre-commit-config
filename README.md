@@ -10,7 +10,7 @@ Enforce rules regarding frozen revisions in `.pre-commit-config.yaml`.
 ```yaml
 # Enforce frozen revisions in `.pre-commit-config.yaml`
 - repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha2
+  rev: v1.0.0-alpha3
   hooks:
       - id: check-frozen
 ```
@@ -89,7 +89,7 @@ are passed to the underlying script when the hook is run. The following configur
 ```yaml
 # Prevent use of frozen revisions in `.pre-commit-config.yaml`
 - repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha2
+  rev: v1.0.0-alpha3
   hooks:
       - id: check-frozen
         args:
@@ -103,7 +103,7 @@ If you just want to make sure that comments match revisions and that no abbrevia
 ```yaml
 # Check use of `frozen: xxx` comments in `.pre-commit-config.yaml`
 - repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha2
+  rev: v1.0.0-alpha3
   hooks:
       - id: check-frozen
         args:
