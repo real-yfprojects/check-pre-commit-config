@@ -27,7 +27,7 @@ jobs:
       - name: Determine old tag name
         id: tag
         run: |
-          git fetch --tags
+          git fetch origin HEAD --tags --depth=2147483647
           echo 'old_tag='"$(git describe HEAD --abbrev=0 --tags)" >> $GITHUB_ENV
 
       - name: List update
