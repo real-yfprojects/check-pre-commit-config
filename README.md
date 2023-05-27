@@ -55,7 +55,7 @@ In adherence to [semver](https://semver.org/) the following rules determine comp
 
 ## Args
 
-When passing a list of rules for an argument the codes of the rules are expected without a delimiter. E.g.: `ycfamt` which would be äquivalent to passing the `--strict` flag.
+When passing a list of rules for an argument the codes of the rules are expected without a delimiter. E.g.: `ycfamt` which would be equivalent to passing the `--strict` flag.
 
 ```
 usage: check-pre-commit-config-frozen [-h] [--rules RULES] [--disable DISABLE] [--strict] [--fix FIX | --fix-all] [--print] [--quiet] [--format FORMAT] [--no-colour] [--verbose] file [file ...]
