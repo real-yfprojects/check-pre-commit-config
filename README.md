@@ -129,9 +129,6 @@ The value of contributions about simplifying or otherwise improving the implemen
 
 ### TODO
 
--   [ ] Write tests
+-   [ ] Complete tests, achieve high test coverage
 -   [ ] Automation
     -   [ ] pre-commit.ci
-    -   [ ] update version in README config snippet
--   [ ] Write documentation (README)
--   [ ] Register hook on pre-commit.com
