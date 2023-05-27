@@ -23,6 +23,12 @@ repos:
       - id: check-executables-have-shebangs
       - id: check-merge-conflict
 
+  # Enforce frozen revisions in `.pre-commit-config.yaml`
+  - repo: https://github.com/real-yfprojects/check-pre-commit-config
+    rev: 27c71bd46101a7de517863033531963b7d04dee2 # frozen: v1.0.0-alpha3
+    hooks:
+      - id: check-frozen
+
   - repo: https://github.com/python-poetry/poetry
     rev: "cacd43c076748411a759c65dd46858cd8b7ef3b3" # frozen: 1.5.0
     hooks:
