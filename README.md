@@ -7,13 +7,15 @@
 
 Enforce rules regarding frozen revisions in `.pre-commit-config.yaml`.
 
+<!-- prettier-ignore-start -->
 ```yaml
-# Enforce frozen revisions in `.pre-commit-config.yaml`
-- repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha3
-  hooks:
+  # Enforce frozen revisions in `.pre-commit-config.yaml`
+  - repo: https://github.com/real-yfprojects/check-pre-commit-config
+    rev: v1.0.0-alpha3
+    hooks:
       - id: check-frozen
 ```
+<!-- prettier-ignore-end -->
 
 We advise to put this hook before any yaml formatters (like prettier) that you have configured as well.
 
@@ -86,31 +88,35 @@ By default `--strict --fix-all` is passed to the underlying script.
 You can customize the hooks behaviour by overriding which command line arguments
 are passed to the underlying script when the hook is run. The following configuration can be used to prevent frozen revisions from being committed:
 
+<!-- prettier-ignore-start -->
 ```yaml
-# Prevent use of frozen revisions in `.pre-commit-config.yaml`
-- repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha3
-  hooks:
+  # Prevent use of frozen revisions in `.pre-commit-config.yaml`
+  - repo: https://github.com/real-yfprojects/check-pre-commit-config
+    rev: v1.0.0-alpha3
+    hooks:
       - id: check-frozen
         args:
-            - "--rules"
-            - "ycue"
-            - "--fix-all"
+          - "--rules"
+          - "ycue"
+          - "--fix-all"
 ```
+<!-- prettier-ignore-end -->
 
 If you just want to make sure that comments match revisions and that no abbreviated hashes are used the following configuration will be suited:
 
+<!-- prettier-ignore-start -->
 ```yaml
-# Check use of `frozen: xxx` comments in `.pre-commit-config.yaml`
-- repo: https://github.com/real-yfprojects/check-pre-commit-config
-  rev: v1.0.0-alpha3
-  hooks:
+  # Check use of `frozen: xxx` comments in `.pre-commit-config.yaml`
+  - repo: https://github.com/real-yfprojects/check-pre-commit-config
+    rev: v1.0.0-alpha3
+    hooks:
       - id: check-frozen
         args:
-            - "--rules"
-            - "ycamet"
-            - "--fix-all"
+          - "--rules"
+          - "ycamet"
+          - "--fix-all"
 ```
+<!-- prettier-ignore-end -->
 
 ## Contributing
 
