@@ -63,12 +63,32 @@ T = TypeVar("T")
 
 
 class async_cache:
+    """
+    A wrapper for caching coroutines.
+
+    Parameters
+    ----------
+    cache_dict : dict
+        the dictionary to use for caching.
+        Provide this to use the same cache for multiple wrappers.
+
+    Examples
+    --------
+    >>> @async_cache()
+    ... async def calc():
+    ...    return 8
+
+    """
+
     def __init__(self, cache_dict=None):
+        """Init."""
         self._dict = cache_dict or {}
 
     def __call__(
         self, func: Callable[..., Coroutine[None, None, T]]
     ) -> Callable[..., Coroutine[None, None, T]]:
+        """Wrap a function and return it."""
+
         @wraps(func)
         async def get(*args, **kwargs):
             key = (args, tuple(map(tuple, kwargs.items())))
@@ -84,12 +104,11 @@ class async_cache:
 
 # -- Git ---------------------------------------------------------------------
 
-# The git commands in this section is partially sourced and modified from
+# Fragments of the following git logic are sourced from
 # https://github.com/pre-commit/pre-commit/blob/main/pre_commit/git.py
-# https://github.com/pre-commit/pre-commit/blob/main/pre_commit/util.py
 #
 # Original Copyright (c) 2014 pre-commit dev team: Anthony Sottile, Ken Struys
-
+# MIT License
 
 # prevents errors on windows
 NO_FS_MONITOR = ("-c", "core.useBuiltinFSMonitor=false")
