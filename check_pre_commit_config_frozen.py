@@ -959,7 +959,7 @@ regex_rich_markup_escape = re.compile(pattern_rich_markup_escape)
 def strip_rich_markup(string: str):
     """Remove the markup for the rich library from a string."""
     string = regex_rich_markup_tag.sub("", string)
-    string = regex_rich_markup_escape.sub(lambda m: m[0], string)
+    string = regex_rich_markup_escape.sub("[", string)
     return string
 
 
