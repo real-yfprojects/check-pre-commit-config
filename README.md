@@ -47,6 +47,38 @@ Revisions are considered frozen when a _hex object name_ is used. That is a hash
 
 The rules `u` and `f` cannot be enabled together.
 
+## Alternatives
+
+You can also implement rules `f`, `u`, `m`, `e` with a more lightweight and faster pygrep hook.
+That is a simple check against a regular expression:
+
+<!-- prettier-ignore-start -->
+```yaml
+  - repo: local
+    hooks:
+      - id: rev-frozen
+        name: revs must be frozen
+        entry: "\\brev: (?!['\"]?[a-f0-9]{40})"
+        language: pygrep
+        files: '\.pre-commit-config.yaml'
+      - id: rev-frozen-comment
+        name: frozen revs must have a corresponding comment
+        entry: "\\brev: (['\"]?)[a-f0-9]{40}\\1(?!\\s*# frozen: \\S+)"
+        language: pygrep
+        files: '\.pre-commit-config.yaml'
+      - id: rev-unfrozen
+        name: revs may not be frozen
+        entry: "\\brev: ['\"]?[a-f0-9]{40}"
+        language: pygrep
+        files: '\.pre-commit-config.yaml'
+      - id: rev-unfrozen-comment
+        name: unfrozen revs may not have a contradicting comment
+        entry: "\\brev: (?!(['\"]?)[a-f0-9]{40}\\1).*\\s*# frozen:"
+        language: pygrep
+        files: '\.pre-commit-config.yaml'
+```
+<!-- prettier-ignore-end -->
+
 ## Versioning
 
 In adherence to [semver](https://semver.org/) the following rules determine compatibility between different versions of this hook.
