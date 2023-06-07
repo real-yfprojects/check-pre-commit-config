@@ -724,6 +724,22 @@ class Linter:
             )
             return
 
+        if "repo" not in repo_yaml:
+            complain(
+                Rule.INVALID_CONFIG,
+                repo_yaml.lc.line,
+                repo_yaml.lc.col,
+                False,
+                msg=f"Missing yaml key `repo` for repo {index}",
+            )
+            return
+
+        # exclude repo `meta` and `local` from rev checks
+        # since they shouldn't have a rev.
+        if repo_yaml["repo"] in ["meta", "local"]:
+            logger.debug(f'Skipped {repo_yaml["repo"]} repository {index}')
+            return
+
         for key in ["rev", "repo"]:
             if key not in repo_yaml:
                 complain(
