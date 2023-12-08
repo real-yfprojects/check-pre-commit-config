@@ -25,10 +25,10 @@ classifiers = [
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python      = ">=3.7"                                                   # doesn't conform to semver
-ruamel-yaml = ">=0.17.26"                                               # doesn't conform to semver
-rich        = { version = "^13.3.5", optional = true }
-pre-commit  = { version = "^3.3.2", optional = true, python = ">=3.8" }
+python      = ">=3.7"                                                 # doesn't conform to semver
+ruamel-yaml = ">=0.17.26"                                             # doesn't conform to semver
+rich        = { version = "^13.7", optional = true }
+pre-commit  = { version = "^3.5", optional = true, python = ">=3.8" }
 
 [tool.poetry.extras]
 pre-commit = ["pre-commit"]
